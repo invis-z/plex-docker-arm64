@@ -1,0 +1,40 @@
+name: refresh-version
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+jobs:
+  check-update:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.push.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Get Version
+        id: version
+        run: |
+          curl -SsL https://plex.tv/api/downloads/5.json | jq -r '.computer.Linux.version' | tee VERSION
+      - name: Push
+        id: push
+        run: |
+          if ! (git diff -s --exit-code VERSION); then
+            git config user.name github-actions[bot]
+            git config user.email github-actions[bot]@users.noreply.github.com
+            git add .
+            git commit -m "Update to plex server version $(cat VERSION)"
+            git push && echo version=$(cat VERSION) >> "$GITHUB_OUTPUT"
+          else
+            echo "No new version available."
+            echo version= >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: check-update
+    if: ${{ needs.check-update.outputs.version != '' }}
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.check-update.outputs.version }}
